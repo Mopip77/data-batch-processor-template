@@ -148,13 +148,78 @@ class BatchProcessor(ABC):
         """
         pass
     
-    def import_data(self) -> int:
+    def import_data(self, force_reimport: bool = False) -> int:
         """
-        导入数据到SQLite
+        导入数据到SQLite，支持断点续传
         
+        Args:
+            force_reimport: 是否强制重新导入数据（覆盖已存在的表）
+            
         Returns:
             导入的数据行数
         """
+        # 检查表是否已存在
+        existing_count = self._check_existing_data()
+        
+        if existing_count > 0 and not force_reimport:
+            self.logger.info(f"发现已存在的数据表 '{self.table_name}'，包含 {existing_count} 条记录")
+            
+            # 在Jupyter环境中询问用户选择
+            try:
+                from IPython.display import display, HTML
+                display(HTML(f"""
+                <div style='background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 10px 0;'>
+                    <h4 style='color: #856404; margin: 0 0 10px 0;'>⚠️ 数据表已存在</h4>
+                    <p style='margin: 5px 0;'>发现已存在的数据表 '<strong>{self.table_name}</strong>'，包含 <strong>{existing_count}</strong> 条记录</p>
+                    <p style='margin: 5px 0;'><strong>选择操作:</strong></p>
+                    <ul style='margin: 10px 0;'>
+                        <li><strong>跳过导入</strong>: 直接使用现有数据，继续处理未完成的记录（推荐用于失败重试）</li>
+                        <li><strong>覆盖导入</strong>: 删除现有数据，重新导入全部数据（全新开始）</li>
+                    </ul>
+                </div>
+                """))
+                
+                choice = input("请选择: [s]跳过导入 / [r]覆盖导入 (默认: s): ").lower().strip()
+                
+                if choice in ['r', 'replace', '覆盖', 'reimport']:
+                    self.logger.info("用户选择覆盖导入，将重新导入所有数据")
+                    return self._do_import_data(force_replace=True)
+                else:
+                    self.logger.info("用户选择跳过导入，使用现有数据继续处理")
+                    return existing_count
+                    
+            except ImportError:
+                # 非Jupyter环境，提供命令行交互
+                print(f"\n⚠️  发现已存在的数据表 '{self.table_name}'，包含 {existing_count} 条记录")
+                print("选择操作:")
+                print("  [s] 跳过导入 - 直接使用现有数据，继续处理未完成的记录（推荐用于失败重试）")
+                print("  [r] 覆盖导入 - 删除现有数据，重新导入全部数据（全新开始）")
+                
+                choice = input("请选择 [s/r] (默认: s): ").lower().strip()
+                
+                if choice in ['r', 'replace', '覆盖']:
+                    self.logger.info("用户选择覆盖导入，将重新导入所有数据")
+                    return self._do_import_data(force_replace=True)
+                else:
+                    self.logger.info("用户选择跳过导入，使用现有数据继续处理")
+                    return existing_count
+        else:
+            # 表不存在或强制重新导入
+            return self._do_import_data(force_replace=force_reimport)
+    
+    def _check_existing_data(self) -> int:
+        """检查已存在数据的数量"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(f"SELECT COUNT(*) FROM {self.table_name}")
+            count = cursor.fetchone()[0]
+            return count
+        except sqlite3.OperationalError:
+            # 表不存在
+            return 0
+    
+    def _do_import_data(self, force_replace: bool = False) -> int:
+        """执行实际的数据导入操作"""
         self.logger.info("开始导入数据...")
         
         # 获取数据源
@@ -191,7 +256,8 @@ class BatchProcessor(ABC):
         
         # 导入到SQLite
         row_count = len(df)
-        df.to_sql(self.table_name, self.conn, if_exists='replace', index=False)
+        if_exists_action = 'replace' if force_replace else 'replace'
+        df.to_sql(self.table_name, self.conn, if_exists=if_exists_action, index=False)
         
         self.logger.info(f"数据导入完成，共{row_count}条记录")
         return row_count
