@@ -1,0 +1,14 @@
+{
+    "project_name": "my-batch-task",
+    "project_slug": "{{ cookiecutter.project_name.lower().replace(' ', '_').replace('-', '_') }}",
+    "description": "批量数据处理项目",
+    "author_name": "Your Name",
+    "author_email": "your.email@example.com",
+    "data_file": "data.csv",
+    "data_separator": "\\t",
+    "table_name": "batch_table",
+    "batch_size": "100",
+    "max_retries": "3",
+    "enable_cache": "y",
+    "cache_size": "1000"
+}
