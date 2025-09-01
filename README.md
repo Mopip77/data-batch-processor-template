@@ -24,10 +24,10 @@ pip install cookiecutter
 
 ```bash
 # 使用本地模板
-cookiecutter ./data-batch-processor
+cookiecutter ./data-batch-processor-template
 
 # 或使用Git仓库(如果已推送)
-# cookiecutter https://github.com/yourname/data-batch-processor
+# cookiecutter https://github.com/Mopip77/data-batch-processor-template
 ```
 
 ### 3. 按提示配置项目
