@@ -309,7 +309,7 @@ class BatchProcessor(ABC):
                     self.logger.info(f"已处理{total_processed}条数据, 当前游标ID为{cursor_id}")
 
             except Exception as e:
-                self.logger.error(f"处理批次时发生错误: {str(e)}")
+                self.logger.error(f"处理批次时发生错误: {str(e)}", exc_info=e)
                 # 可以选择继续处理下一批次或停止
                 cursor_id = batch_df[self.cursor_field].iloc[-1]
                 batch_count += 1  # 错误的批次也要计数
@@ -369,7 +369,7 @@ class BatchProcessor(ABC):
                     updates.append(update_record)
 
                 except Exception as e:
-                    self.logger.error(f"处理行{row[self.cursor_field]}时出错: {str(e)}")
+                    self.logger.error(f"处理行{row[self.cursor_field]}时出错: {str(e)}", exc_info=e)
                     # 增加重试次数，结果字段设为空
                     retry_count = row[self.retry_field] + 1
                     update_record = [False] + [''] * len(result_fields) + [retry_count, row[self.cursor_field]]
@@ -382,7 +382,7 @@ class BatchProcessor(ABC):
             return len(updates)
 
         except Exception as e:
-            self.logger.error(f"处理批次时发生错误: {str(e)}")
+            self.logger.error(f"处理批次时发生错误: {str(e)}", exc_info=e)
             raise
 
     def _get_update_fields(self) -> List[str]:
@@ -483,5 +483,5 @@ class BatchProcessor(ABC):
             self.logger.info("=" * 50)
 
         except Exception as e:
-            self.logger.error(f"批处理任务失败: {str(e)}")
+            self.logger.error(f"批处理任务失败: {str(e)}", exc_info=e)
             raise
