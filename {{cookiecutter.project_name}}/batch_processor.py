@@ -29,7 +29,7 @@ class BatchProcessor(ABC):
                  batch_size: int = 100,
                  table_name: str = 'batch_table',
                  db_name: str = 'batch_data.db',
-                 cursor_field: str = 'id',
+                 cursor_field: str = '_id',
                  status_field: str = 'is_processed',
                  retry_field: str = 'retry_count',
                  max_retries: int = 3):
@@ -185,6 +185,8 @@ class BatchProcessor(ABC):
                     self.logger.info("用户选择覆盖导入，将重新导入所有数据")
                     return self._do_import_data(force_replace=True)
                 else:
+                    # 确保现有表包含游标字段（默认 _id）
+                    self._ensure_cursor_column_in_table()
                     self.logger.info("用户选择跳过导入，使用现有数据继续处理")
                     return existing_count
 
@@ -201,6 +203,8 @@ class BatchProcessor(ABC):
                     self.logger.info("用户选择覆盖导入，将重新导入所有数据")
                     return self._do_import_data(force_replace=True)
                 else:
+                    # 确保现有表包含游标字段（默认 _id）
+                    self._ensure_cursor_column_in_table()
                     self.logger.info("用户选择跳过导入，使用现有数据继续处理")
                     return existing_count
         else:
@@ -217,6 +221,28 @@ class BatchProcessor(ABC):
         except sqlite3.OperationalError:
             # 表不存在
             return 0
+
+    def _ensure_cursor_column_in_table(self):
+        """
+        确保现有表中存在游标字段（默认 _id）。当用户跳过导入时调用。
+        若缺失则基于 SQLite 的 rowid 生成并创建索引。
+        """
+        if not self.cursor_field:
+            return
+        cur = self.conn.cursor()
+        try:
+            cur.execute(f"PRAGMA table_info({self.table_name})")
+            columns = [row[1] for row in cur.fetchall()]
+            if self.cursor_field not in columns:
+                cur.execute(f"ALTER TABLE {self.table_name} ADD COLUMN {self.cursor_field} INTEGER")
+                cur.execute(f"UPDATE {self.table_name} SET {self.cursor_field} = rowid")
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_{self.cursor_field} ON {self.table_name}({self.cursor_field})"
+                )
+                self.conn.commit()
+        except sqlite3.OperationalError:
+            # 表不存在等情况
+            pass
 
     def _do_import_data(self, force_replace: bool = False) -> int:
         """执行实际的数据导入操作"""
@@ -238,6 +264,10 @@ class BatchProcessor(ABC):
         else:
             raise ValueError("数据源必须是文件路径或DataFrame对象")
 
+        # 若缺少游标字段（默认 _id），按顺序生成（从 1 开始）
+        if self.cursor_field and self.cursor_field not in df.columns:
+            df[self.cursor_field] = range(1, len(df) + 1)
+
         # 添加控制字段和结果字段
         schema = self.define_schema()
 
@@ -258,6 +288,16 @@ class BatchProcessor(ABC):
         row_count = len(df)
         if_exists_action = 'replace' if force_replace else 'replace'
         df.to_sql(self.table_name, self.conn, if_exists=if_exists_action, index=False)
+
+        # 导入后为游标列创建索引以提升查询性能
+        try:
+            cur = self.conn.cursor()
+            cur.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_{self.cursor_field} ON {self.table_name}({self.cursor_field})"
+            )
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
         self.logger.info(f"数据导入完成，共{row_count}条记录")
         return row_count
