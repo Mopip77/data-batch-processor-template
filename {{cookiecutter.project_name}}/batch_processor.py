@@ -133,16 +133,30 @@ class BatchProcessor(ABC):
             - 结果字段的值
             - 保持原有的行顺序和索引
 
-        示例:
-            def process_business_logic(self, batch_data: pd.DataFrame) -> pd.DataFrame:
-                # 如果需要调用外部API
-                external_data = self.fetch_external_data(batch_data)
+        示例（并行语法糖）:
+            from utils import parallel, join_all
 
-                # 处理每一行或批量处理
+            # 在方法体内定义一个并行化的单任务处理函数
+            @parallel(pool_size=5)
+            def handle_one_task(row):
+                # do something time-consuming (e.g. IO)
+                return {
+                    'result1': some_calculation(row),
+                    'result2': some_other_logic(row),
+                }
+
+            def process_business_logic(self, batch_data: pd.DataFrame) -> pd.DataFrame:
+                futures = []
                 for idx, row in batch_data.iterrows():
-                    # 执行业务逻辑
-                    batch_data.loc[idx, 'result1'] = some_calculation(row)
-                    batch_data.loc[idx, 'result2'] = some_other_logic(row)
+                    futures.append(handle_one_task(row))
+
+                results = join_all(futures)
+                handle_one_task.pool_shutdown()
+
+                # 回填结果
+                for (idx, _), res in zip(batch_data.iterrows(), results):
+                    batch_data.loc[idx, 'result1'] = res.get('result1', '')
+                    batch_data.loc[idx, 'result2'] = res.get('result2', '')
 
                 return batch_data
         """

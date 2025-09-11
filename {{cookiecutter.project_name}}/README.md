@@ -61,6 +61,38 @@ def process_business_logic(self, batch_data: pd.DataFrame) -> pd.DataFrame:
     return batch_data
 ```
 
+##### 并行处理（可选，推荐用于 IO 密集场景）
+
+提供一个简单的并行语法糖 `@parallel(pool_size=5)`，用于将单条任务的处理并行化：
+
+```python
+from utils import parallel, join_all
+
+def process_business_logic(self, batch_data: pd.DataFrame) -> pd.DataFrame:
+    @parallel(pool_size=5)
+    def handle_one_task(row):
+        # 执行你的 IO/网络调用等耗时操作
+        return {
+            'your_result1': 'value1',
+            'your_result2': 'value2',
+        }
+
+    futures = [handle_one_task(row) for _, row in batch_data.iterrows()]
+    results = join_all(futures)
+    handle_one_task.pool_shutdown()
+
+    for (idx, _), res in zip(batch_data.iterrows(), results):
+        batch_data.loc[idx, 'your_result1'] = res.get('your_result1', '')
+        batch_data.loc[idx, 'your_result2'] = res.get('your_result2', '')
+
+    return batch_data
+```
+
+说明：
+- `pool_size` 控制并发度（线程池），适合 IO 密集（如 API 请求）。
+- `f.join()` 等价于 `future.result()`，会在任务完成后返回结果。
+- 使用完成后调用 `handle_one_task.pool_shutdown()` 以释放线程资源。
+
 #### 3.3 (可选) 实现API调用 (`fetch_external_data`)
 
 ```python
